@@ -1,24 +1,36 @@
 const express=require('express')
 const app=express()
 const {connectTodb,getClient}=require('./db')
-const redis=require('redis')
-const session=require('express-session')
-const redisStore=require('connect-redis').default
-const methodOverride=require('method-override')
+const redis=require('redis') //require redis
+const session=require('express-session') //express-session to work with sessions
+
+//intialize store
+// const redisStore=require('connect-redis').default //redis session storage for express
+
+const redisClient= redis.createClient() //create client with database situated on local host
+
+//another method of initializing store is
+const RedisStore=require('connect-redis').default
+let redisStore= new  RedisStore({
+    client: redisClient
+})
+
+
+// const methodOverride=require('method-override') 
 const client=getClient()
 const _db=client.db('auth_redis').collection('users')
-const redisClient= redis.createClient() //create client with database as local host
 
 app.use(express.json())
 app.use(express.urlencoded({extended:true}))
 app.set('view engine','ejs')
-app.use(methodOverride('_method'))
+// app.use(methodOverride('_method'))
 async function connectToRedis(){
     await redisClient.connect()
 }
+//session middleware
 app.use(session({
     name:'sscok',
-    store: new redisStore({client:redisClient}),
+    store: redisStore,//new redisStore({client:redisClient}), //this has to be changed according to how we are initialzing the store
     secret:"notsosecret",
     resave:false,
     saveUninitialized:false,
@@ -30,6 +42,8 @@ app.use(session({
 
 }))
 
+
+//user can only see their fav when they are logged in 
 app.get('/fav',async (req,res)=>{
     if(!req.session.user)
     {
@@ -84,7 +98,13 @@ app.get('/logout',(req,res)=>{
 })
 
 app.get('/register',(req,res)=>{
-    return res.render("register")
+    if(!req.session.user){
+        return res.render('register')
+    }
+    else{
+        const data={text: 'already logged in'}
+        return res.render('home',{data})
+    }
 })
 
 
