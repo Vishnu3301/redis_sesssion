@@ -2,7 +2,9 @@ const express = require('express')
 const app = express()
 const { connectTodb, getClient } = require('./db')
 const redis = require('redis') //require redis
+const uuid=require('uuid').v4
 const session = require('express-session') //express-session to work with sessions
+const { CommandStartedEvent } = require('mongodb')
 
 //intialize store
 // const redisStore=require('connect-redis').default //redis session storage for express
@@ -44,12 +46,6 @@ app.use(session({
 
 }))
 
-//custom middleware to check if the user has logged already with a different device
-
-// const checkLoggedInSession= (req,res,next)=>{
-
-// }
-
 //user can only see their fav when they are logged in 
 app.get('/fav', async (req, res) => {
     if (!req.session.user) {
@@ -61,7 +57,7 @@ app.get('/fav', async (req, res) => {
         const userObject = await _db.findOne({ username: username })
         const fav = userObject.fav;
         const data = { text: fav }
-        console.log("session id in fav: ", req.session.id)
+        // console.log("session id in fav: ", req.session.id)
         return res.render('fav', { data })
     }
 
@@ -77,34 +73,32 @@ app.get('/login', (req, res) => {
     }
 })
 
-// function changeKey(){
 
-// }
+
 
 app.post('/login', async (req, res) => {
     const hasuser = await _db.findOne(req.body)
     if (hasuser) {
         const user = { id: hasuser._id, username: req.body.username };
-        const id=hasuser._id;
-        redisStore.get(id,(err, hasloggedin)=>{
-            if(err){
-                console.log(err);
-                return res.json("error")
-            }
-            else{
-                if(hasloggedin){
-                   //delete the previous session
-                   redisStore.destroy('')
-                }
-                else{
-
-                }
-            }
-        })
-        redisStore.get()
-        // req.session.user = user;
-        // const data = { text: "Logged in" }
-        // return res.render('home', { data })
+        // req.session.user=user
+        let userid=hasuser._id
+        userid=userid.toString()
+        req.session.user=user
+        const sessionIdFromOtherDevice=await redisClient.get(userid);
+        console.log("sesion from other device: ",sessionIdFromOtherDevice)
+        //checking if the following user id has a session id set as its value in redis session store 
+        if(sessionIdFromOtherDevice){
+            //delete the session that is from the previous logged in device
+            await redisClient.del(sessionIdFromOtherDevice);
+            //update the value of key: userid to the new session id
+            await redisClient.set(userid,req.session.id)
+        }
+        else{
+            //this is the first login device of user and user has not logged in from other devices
+            await redisClient.set(userid,req.session.id)
+        }
+        const data = { text: "Logged in" }
+        return res.render('home', { data })
 
     }
     else {
@@ -133,7 +127,12 @@ app.post('/register', async (req, res) => {
 
 })
 
-app.get('/logout', (req, res) => {
+app.get('/logout', async(req, res) => {
+    //before destroying the session let's delete the key value pair userid:session id
+    let userid=req.session.user.id
+    userid=userid.toString()
+    await redisClient.del(userid);
+    //now lets destroy the session
     req.session.destroy(err => {
         if (err) {
             console.log(err);
@@ -146,13 +145,13 @@ app.get('/logout', (req, res) => {
     })
 })
 connectTodb()
-    .then(() => {
-        console.log("mongodb connected")
-        connectToRedis()
-            .then(() => {
-                console.log("redis connected")
-                app.listen(3000, () => {
-                    console.log("Server started")
-                })
+.then(() => {
+    console.log("mongodb connected")
+    connectToRedis()
+        .then(() => {
+            console.log("redis connected")
+            app.listen(3000, () => {
+                console.log("Server started")
             })
-    })
+        })
+})

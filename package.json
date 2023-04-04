@@ -16,6 +16,7 @@
     "express-session": "^1.17.3",
     "method-override": "^3.0.0",
     "mongodb": "^5.1.0",
-    "redis": "^4.6.5"
+    "redis": "^4.6.5",
+    "uuid": "^9.0.0"
   }
 }
